@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paragraf Paylaşım Uygulaması</title>
+    <!-- Tailwind CSS (Estetik için) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React ve Babel (JSX'i tarayıcıda çalıştırmak için) -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        /* Genel stil ayarlamaları */
+        body { font-family: 'Inter', sans-serif; background-color: #f9fafb; margin: 0; padding: 0; }
+        #root { min-height: 100vh; display: flex; flex-direction: column; }
+        /* Mobil cihazlar için daha iyi görünümler */
+        .max-w-4xl { max-width: 95%; }
+        /* Alt menü çubuğu gölgesini mobil uygulamaya benzetir */
+        footer { box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1), 0 -2px 4px -2px rgba(0, 0, 0, 0.06); }
+        .transition-opacity { transition: opacity 0.3s ease; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useMemo } = window.React;
+        const ReactDOM = window.ReactDOM; 
+        
+        // Firebase importları
+        const { initializeApp } = firebase;
+        const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = firebase.auth;
+        // sorgudan orderBy ve limit kaldırıldığı için artık firestore.query'yi normal kullanabiliriz.
+        const { getFirestore, collection, query, where, onSnapshot, addDoc, serverTimestamp } = firebase.firestore;
+        
+        // Lucide ikonlarını React componentleri olarak kullanabilmek için mock'layalım
+        const Users = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M18 8h6"/><path d="M21 11v-6"/></svg>;
+        const BookOpen = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s4-10 14-4V5c-4.4-1.2-12 1.4-12 7c0 5.6 7.6 8.2 12 7.4v-3.4c-8.4 0-14-3.4-14-6"/></svg>;
+        const Send = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 19-3-9-9-3 19-7z"/></svg>;
+        const User = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+        const Loader2 = (props) => <svg {...props} className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>;
+        const Camera = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>;
+        const X = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
+        const Image = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>;
+        const Check = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>;
+        const Edit = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>;
+
+
+        // --- Vision API Ayarları (Gemini ile OCR) ---
+        const API_KEY = "" // Boş bırakılmalı
+        const VISION_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+        // Metin çıkarma için daha geniş bir limit.
+        const MAX_HIGHLIGHT_CHAR_COUNT = 800; 
+        const FAILURE_CODE = "NO_TEXT_FOUND";
+        
+        // --- API İŞLEMLERİ (Vision/OCR) ---
+
+        /**
+         * Üstel Geri Çekilme (Exponential Backoff) ile API çağrısı yapar.
+         */
+        async function fetchWithBackoff(url, options, retries = 5, delay = 1000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                         if (response.status === 429 && i < retries - 1) {
+                            throw new Error(`Rate limit, yeniden denenecek. Durum: ${response.status}`);
+                         }
+                        throw new Error(`API Hatası: ${response.status} ${response.statusText}`);
+                    }
+                    return response;
+                } catch (error) {
+                    console.warn(`API çağrısı başarısız (${i + 1}. deneme). Bekleniyor: ${delay / 1000}s`, error);
+                    if (i < retries - 1) {
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2; 
+                    } else {
+                        throw error; 
+                    }
+                }
+            }
+        }
+
+        /**
+         * Görüntüdeki metni yapay zeka ile çıkarır. (Agresif Sistem Talimatı ile)
+         */
+        async function extractTextFromImage(base64Image) {
+            const mimeType = base64Image.substring(5, base64Image.indexOf(';'));
+            const dataPart = base64Image.split(',')[1];
+            
+            // GELİŞTİRME: Modelin sadece metne odaklanmasını ve yorum yapmamasını sağlayan EN NET talimat.
+            const systemInstruction = `
+                You are a machine whose only function is to transcribe text from an image. 
+                1. Transcribe all visible text exactly as it appears. 
+                2. DO NOT add any extra commentary, greetings, titles, or explanations. 
+                3. If no text is legible, or the image quality is too poor, you MUST return the exact phrase: "${FAILURE_CODE}"
+            `;
+
+            const userQuery = "Transcribe the text in this image directly.";
+
+            const payload = {
+                contents: [
+                    {
+                        role: "user",
+                        parts: [
+                            { text: userQuery },
+                            {
+                                inlineData: {
+                                    mimeType: mimeType,
+                                    data: dataPart
+                                }
+                            }
+                        ]
+                    }
+                ],
+                systemInstruction: {
+                    parts: [{ text: systemInstruction }]
+                },
+            };
+
+            try {
+                const response = await fetchWithBackoff(VISION_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                
+                // Hata kodunu kontrol et
+                if (generatedText.trim() === FAILURE_CODE) {
+                     throw new Error("Görsel net değil veya metin çok küçük/bulanık. Daha kaliteli bir fotoğraf deneyin.");
+                }
+                
+                // Boş veya çok kısa metinleri kontrol et
+                if (generatedText.trim().length < 10) {
+                     throw new Error("Görselden anlamlı metin çıkarılamadı (Çıkan metin çok kısa). Lütfen tam bir paragraf yükleyin.");
+                }
+
+                const finalExtract = generatedText.length > MAX_HIGHLIGHT_CHAR_COUNT
+                    ? generatedText.substring(0, MAX_HIGHLIGHT_CHAR_COUNT) + '...'
+                    : generatedText;
+
+                return finalExtract.trim();
+
+            } catch (e) {
+                console.error("Metin çıkarma API hatası:", e);
+                // API'dan gelen özel hata mesajını ilet
+                throw new Error(e.message.includes("Görsel net değil") ? e.message : "Görseldeki metin çıkarılamadı. API hizmetinde geçici bir sorun olabilir.");
+            }
+        }
+
+
+        // --- OCR VE PAYLAŞIM FORMU BİLEŞENİ ---
+        const OCRAndPostForm = ({ onClose, onPost, isPosting, userName }) => {
+            const [step, setStep] = useState(1); // 1: Fotoğraf Seç, 2: Metin Önizle, 3: Yükleniyor
+            const [imageBase64, setImageBase64] = useState(null);
+            const [extractedText, setExtractedText] = useState('');
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [ocrError, setOcrError] = useState('');
+
+            // Dosya Seçimi ve OCR Başlatma
+            const handleImageUpload = (e) => {
+                setOcrError('');
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    const imgData = reader.result;
+                    setImageBase64(imgData);
+                    setStep(3); // Yükleniyor
+
+                    setIsProcessing(true);
+                    
+                    try {
+                        const text = await extractTextFromImage(imgData);
+                        
+                        setExtractedText(text);
+                        setStep(2); // Metin Önizleme
+                        setOcrError('');
+
+                    } catch (apiError) {
+                        setOcrError(apiError.message);
+                        setStep(1); // Başlangıca dön
+                        setImageBase64(null);
+                    } finally {
+                        setIsProcessing(false);
+                        e.target.value = null; // Dosya inputunu temizle
+                    }
+                };
+                reader.readAsDataURL(file);
+            };
+
+            // Paylaşım İşlemi
+            const handleFinalPost = (e) => {
+                e.preventDefault();
+                if (extractedText && imageBase64) {
+                    onPost(extractedText, imageBase64);
+                }
+            };
+            
+            // Sıfırlama
+            const resetForm = () => {
+                setStep(1);
+                setImageBase64(null);
+                setExtractedText('');
+                setOcrError('');
+            };
+
+            return (
+                <div className="p-4 flex flex-col gap-4">
+                    {/* Hata Mesajı */}
+                    {ocrError && (
+                        <div className="bg-red-100 border border-red-400 text-red-700 p-3 rounded-lg text-sm transition-opacity duration-300">
+                            {ocrError}
+                        </div>
+                    )}
+                    
+                    {/* Yükleniyor Durumu */}
+                    {(isProcessing || isPosting) && (
+                        <div className="flex items-center justify-center p-8 bg-indigo-50 rounded-xl shadow-inner text-indigo-700">
+                            <Loader2 className="w-6 h-6 animate-spin mr-3"/>
+                            {isProcessing ? "Metin çıkarılıyor, bu işlem birkaç saniye sürebilir..." : "Gönderi paylaşılıyor..."}
+                        </div>
+                    )}
+
+                    {/* Adım 1: Fotoğraf Seçme/Çekme */}
+                    {step === 1 && !isProcessing && (
+                        <div className="bg-white p-5 rounded-xl shadow-md border-2 border-dashed border-indigo-200">
+                            <h3 className="text-lg font-semibold text-gray-800 mb-3">1. Paragrafın Fotoğrafını Çekin/Seçin</h3>
+                            <label className="w-full flex items-center justify-center p-4 border-2 border-dashed border-indigo-400 bg-indigo-50 rounded-lg text-indigo-600 cursor-pointer hover:bg-indigo-100 transition duration-150 font-medium">
+                                <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    onChange={handleImageUpload} 
+                                    className="hidden" 
+                                    // capture="camera" özniteliği, mobil tarayıcılarda doğrudan kamerayı açmayı denemek için kullanılır
+                                    capture="camera" 
+                                />
+                                <Camera className="w-5 h-5 mr-2"/> Fotoğraf Çek / Yükle
+                            </label>
+                            <p className="text-xs text-gray-500 mt-2 text-center">**Geliştirme Notu:** En iyi sonuç için metnin net, düzgün ve iyi aydınlatılmış olmasına dikkat edin.</p>
+                        </div>
+                    )}
+
+                    {/* Adım 2: Metin Önizleme ve Düzenleme */}
+                    {step === 2 && !isProcessing && (
+                        <form onSubmit={handleFinalPost} className="space-y-4">
+                            <h3 className="text-xl font-bold text-gray-800 flex items-center">
+                                <Edit className="w-5 h-5 mr-2 text-indigo-600"/> 2. Metni Düzenle ve Onayla
+                            </h3>
+                            
+                            {/* Metin Alanı */}
+                            <textarea
+                                value={extractedText}
+                                onChange={(e) => setExtractedText(e.target.value)}
+                                placeholder="Çıkarılan metin..."
+                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 min-h-[150px] text-gray-700 text-sm shadow-sm"
+                                disabled={isPosting}
+                            />
+                            <p className="text-xs text-gray-500 text-right">Karakter: {extractedText.length}</p>
+
+                            {/* Görsel Önizleme */}
+                            {imageBase64 && (
+                                <div className="p-3 border rounded-xl bg-gray-50 shadow-inner">
+                                    <h4 className="text-sm font-medium mb-2 text-gray-700">Fotoğraf Önizlemesi (Gönderi Görseli Olacak)</h4>
+                                    <img src={imageBase64} alt="Çıkarılan Metin Kaynağı" className="max-w-full h-auto rounded-lg shadow-md border border-gray-300 mx-auto" style={{ maxHeight: '200px', objectFit: 'contain' }}/>
+                                </div>
+                            )}
+
+                            {/* Eylem Butonları */}
+                            <div className="flex gap-3">
+                                <button 
+                                    type="button"
+                                    onClick={resetForm}
+                                    className="flex-1 flex items-center justify-center py-3 bg-red-100 text-red-700 font-semibold rounded-lg hover:bg-red-200 transition-colors duration-200 disabled:opacity-50"
+                                    disabled={isPosting}
+                                >
+                                    <X className="w-4 h-4 mr-2"/> İptal / Tekrar Çek
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 flex items-center justify-center py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-200 disabled:bg-indigo-400"
+                                    disabled={!extractedText.trim() || isPosting}
+                                >
+                                    <Check className="w-5 h-5 mr-2"/> Paylaş
+                                </button>
+                            </div>
+                            <p className="text-xs text-center text-gray-500 mt-2">Bu, {userName} adına sosyal akışa kaydedilecektir.</p>
+                        </form>
+                    )}
+                </div>
+            );
+        };
+
+
+        // --- Ana Bileşen ---
+        const App = () => {
+            const [firebaseReady, setFirebaseReady] = useState(false);
+            const [db, setDb] = useState(null);
+            const [auth, setAuth] = useState(null);
+            const [userId, setUserId] = useState(null);
+            const [userName, setUserName] = useState("Kullanıcı");
+            const [viewMode, setViewMode] = useState('mine'); // 'mine' (Kitaplarım) veya 'social' (Vitrin)
+            const [isPostingFormOpen, setIsPostingFormOpen] = useState(false); // OCR/Paylaşım formu durumu
+            const [myPosts, setMyPosts] = useState([]);
+            const [socialPosts, setSocialPosts] = useState([]);
+            const [isPosting, setIsPosting] = useState(false); // Yeni paylaşım yapılıyor mu?
+            const [errorMessage, setErrorMessage] = useState('');
+
+            // 1. Firebase Başlatma ve Kimlik Doğrulama
+            useEffect(() => {
+                if (db) return; // Zaten başlatıldıysa tekrar çalıştırma
+
+                const initFirebase = async () => {
+                    try {
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+                        const app = initializeApp(firebaseConfig);
+                        const firestore = getFirestore(app);
+                        const authentication = getAuth(app);
+                        setDb(firestore);
+                        setAuth(authentication);
+
+                        let user;
+
+                        // Önce custom token ile giriş yapmayı dene
+                        if (typeof __initial_auth_token !== 'undefined') {
+                            const result = await signInWithCustomToken(authentication, __initial_auth_token);
+                            user = result.user;
+                        } else {
+                            // Token yoksa anonim giriş yap
+                            const result = await signInAnonymously(authentication);
+                            user = result.user;
+                        }
+
+                        // Kullanıcı bilgilerini ayarla
+                        if (user) {
+                            setUserId(user.uid);
+                            setUserName(`Kullanıcı-${user.uid.substring(0, 8)}`);
+                        } else {
+                            // Hata durumunda rastgele ID ata, ancak bu durumda Firestore erişimi kısıtlanabilir.
+                            const tempId = crypto.randomUUID();
+                            setUserId(tempId);
+                            setUserName("Anonim Kullanıcı");
+                            console.warn("Kimlik doğrulama başarısız oldu, geçici kullanıcı ID'si atandı: " + tempId);
+                        }
+                        
+                        // Bu noktada userId'nin kesinlikle ayarlandığını garanti ediyoruz.
+                        setFirebaseReady(true);
+
+                    } catch (e) {
+                        console.error("Firebase kurulumunda veya kimlik doğrulamada kritik hata:", e);
+                        setErrorMessage("Veritabanı bağlantısı veya yetkilendirme başarısız oldu. Lütfen konsolu kontrol edin.");
+                        setFirebaseReady(true); // Hata olsa bile yükleme ekranından çık
+                    }
+                };
+
+                initFirebase();
+            }, [db]);
+
+
+            // Firestore koleksiyon referansı oluşturma
+            const getCollectionRef = useCallback((collectionName) => {
+                if (!db) return null;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                // Public data path: /artifacts/{appId}/public/data/{your_collection_name}
+                return collection(db, 'artifacts', appId, 'public', 'data', collectionName);
+            }, [db]);
+
+            // 2. Benim Paylaşımlarımı Çekme (Real-time) - Dizin hatasını çözmek için yerel sıralama kullanıldı.
+            useEffect(() => {
+                if (!firebaseReady || !db || !userId) return; // Güçlendirilmiş kontrol
+
+                const postsRef = getCollectionRef('posts');
+                if (!postsRef) return;
+
+                // Dizin hatasını önlemek için orderBy ve limit kaldırıldı
+                const q = query(
+                    postsRef,
+                    where("userId", "==", userId)
+                );
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    // 1. Raw veriyi (Timestamp objesi dahil) al
+                    let rawPosts = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data(),
+                        timestamp: doc.data().timestamp // Timestamp objesini koru
+                    }));
+
+                    // 2. Yerel sıralama (in-memory sorting): En yeni başa
+                    rawPosts.sort((a, b) => {
+                        const timeA = a.timestamp?.toMillis() || 0;
+                        const timeB = b.timestamp?.toMillis() || 0;
+                        return timeB - timeA; // Descending (en yeni başa)
+                    });
+                    
+                    // 3. İlk 10'u al ve tarihi formatla
+                    const sortedAndLimitedPosts = rawPosts.slice(0, 10).map(post => ({
+                        ...post,
+                        timestamp: post.timestamp?.toDate()?.toLocaleDateString('tr-TR') || 'Yakın Zaman'
+                    }));
+
+                    setMyPosts(sortedAndLimitedPosts);
+                    
+                    // Hata mesajını temizle
+                    if (errorMessage.includes("yetkilendirme")) setErrorMessage('');
+                }, (error) => {
+                    console.error("Benim Paylaşımlarım çekilirken hata:", error);
+                    setErrorMessage("Veri çekme hatası (Yetkilendirme sorunu olabilir).");
+                });
+
+                return () => unsubscribe();
+            }, [firebaseReady, db, userId, getCollectionRef]);
+
+            // 3. Sosyal Akışı Çekme (Real-time) - Dizin hatasını çözmek için yerel sıralama kullanıldı.
+            useEffect(() => {
+                if (!firebaseReady || !db || !userId || viewMode !== 'social') return; // Güçlendirilmiş kontrol
+
+                const postsRef = getCollectionRef('posts');
+                if (!postsRef) return;
+
+                // Dizin hatasını önlemek için orderBy ve limit kaldırıldı
+                const q = query(
+                    postsRef,
+                    where("userId", "!=", userId)
+                );
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                     // 1. Raw veriyi (Timestamp objesi dahil) al
+                    let rawPosts = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data(),
+                        timestamp: doc.data().timestamp // Timestamp objesini koru
+                    }));
+
+                    // 2. Yerel sıralama (in-memory sorting): En yeni başa
+                    rawPosts.sort((a, b) => {
+                        const timeA = a.timestamp?.toMillis() || 0;
+                        const timeB = b.timestamp?.toMillis() || 0;
+                        return timeB - timeA; // Descending (en yeni başa)
+                    });
+                    
+                    // 3. İlk 20'yi al ve tarihi formatla
+                    const sortedAndLimitedPosts = rawPosts.slice(0, 20).map(post => ({
+                        ...post,
+                        timestamp: post.timestamp?.toDate()?.toLocaleDateString('tr-TR') || 'Yakın Zaman'
+                    }));
+
+                    setSocialPosts(sortedAndLimitedPosts);
+                    
+                    // Hata mesajını temizle
+                    if (errorMessage.includes("yetkilendirme")) setErrorMessage('');
+                }, (error) => {
+                    console.error("Sosyal Paylaşımlar çekilirken hata:", error);
+                    setErrorMessage("Veri çekme hatası (Yetkilendirme sorunu olabilir).");
+                });
+
+                return () => unsubscribe();
+            }, [firebaseReady, db, userId, viewMode, getCollectionRef]);
+
+
+            // 4. Yeni Paragraf Paylaşma İşlevi (OCR'den Gelen Veri ile)
+            const handleOCRPostSubmit = async (text, imageBase64) => {
+                if (!text.trim() || !imageBase64 || !userId || !db) {
+                    setErrorMessage('Metin veya görsel bilgisi eksik veya yetkilendirme tamamlanmadı.');
+                    return;
+                }
+
+                setIsPosting(true);
+                setErrorMessage('');
+
+                try {
+                    const postsRef = getCollectionRef('posts');
+                    if (!postsRef) throw new Error("Koleksiyon referansı bulunamadı.");
+
+                    await addDoc(postsRef, {
+                        userId: userId,
+                        displayName: userName,
+                        caption: text.trim(), // OCR'dan gelen metin
+                        imageUrl: imageBase64, // Base64 olarak kaydedilen görsel
+                        timestamp: serverTimestamp()
+                    });
+
+                    setIsPostingFormOpen(false); // Paylaşım başarılı olunca formu kapat
+                    setErrorMessage('Gönderi başarıyla paylaşıldı!');
+                    setViewMode('mine'); // Kendi paylaşımlarına dön
+                } catch (error) {
+                    console.error("Gönderi eklenirken hata:", error);
+                    setErrorMessage('Paragrafı paylaşırken bir sorun oluştu.');
+                } finally {
+                    setIsPosting(false);
+                }
+            };
+
+            // 5. Gönderi Kartı Bileşeni (Aynı kalır, sadece Base64 image'ı render eder)
+            const PostCard = useMemo(() => ({ post }) => {
+                // Base64 img'ler için de çalışır
+                const isBase64 = post.imageUrl.startsWith('data:image/');
+
+                return (
+                    <div className="bg-white rounded-xl shadow-lg overflow-hidden transition-all duration-300 transform hover:shadow-xl hover:scale-[1.01] flex flex-col">
+                        {/* Görüntü alanı - Kare format için aspect-ratio: 1/1 */}
+                        <div className="aspect-square w-full">
+                            <img
+                                src={post.imageUrl}
+                                alt={post.caption}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = 'https://placehold.co/400x400/94a3b8/fff?text=Görsel+Yüklenemedi';
+                                }}
+                            />
+                        </div>
+                        {/* Metin ve Kullanıcı Bilgileri */}
+                        <div className="p-4 flex flex-col justify-between flex-grow">
+                            <div>
+                                <p className="text-gray-700 text-sm italic mb-2 line-clamp-3">{post.caption}</p>
+                            </div>
+                            <div className="mt-2 text-xs text-gray-500 flex justify-between items-center">
+                                <span className="font-medium text-indigo-600 flex items-center">
+                                    <User className="w-3 h-3 mr-1" />
+                                    {post.displayName}
+                                </span>
+                                <span>{post.timestamp}</span>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }, []);
+
+            // 6. Mevcut Görünüme Göre İçeriği Seç
+            const currentPosts = viewMode === 'mine' ? myPosts : socialPosts;
+            const isMyView = viewMode === 'mine';
+            const postCount = currentPosts.length;
+            const isLoading = !firebaseReady;
+
+            // Alt menü çubuğundaki düğmeler için stil
+            const NavButton = ({ mode, icon: Icon, label, action }) => (
+                <button
+                    onClick={() => {
+                        action();
+                        setIsPostingFormOpen(false); // Menü butonu tıklanınca OCR formunu kapat
+                    }}
+                    className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors duration-200 ${
+                        viewMode === mode ? 'text-indigo-600' : 'text-gray-500 hover:text-indigo-600'
+                    }`}
+                    disabled={isLoading}
+                >
+                    <Icon className="w-6 h-6" />
+                    <span className="text-xs mt-1">{label}</span>
+                </button>
+            );
+
+            // Merkezi büyük buton
+            const CentralButton = ({ action }) => (
+                <button
+                    onClick={action}
+                    className="w-14 h-14 bg-indigo-600 text-white rounded-full shadow-xl -mt-6 flex items-center justify-center border-4 border-white transition-all duration-300 transform hover:scale-105"
+                    disabled={isLoading}
+                >
+                    <Camera className="w-6 h-6" />
+                </button>
+            );
+
+            return (
+                <div className="min-h-screen bg-gray-50 font-sans antialiased flex flex-col pb-20"> {/* Alt menü için boşluk bırak */}
+                    {/* Hata Mesajı Alanı */}
+                    {errorMessage && (
+                        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 sticky top-0 z-50 transition-all duration-300" role="alert">
+                            <p className="font-bold">Hata</p>
+                            <p>{errorMessage}</p>
+                        </div>
+                    )}
+
+                    {/* Yeni Gönderi Formu (Modal/Overlay) - OCR Akışı İçin */}
+                    <div className={`fixed top-0 left-0 right-0 bottom-0 z-30 bg-gray-50 shadow-xl transition-transform duration-500 ${isPostingFormOpen ? 'translate-y-0' : 'translate-y-full'}`}>
+                        <div className="max-w-4xl mx-auto p-4 h-full overflow-y-auto">
+                            <div className="flex justify-between items-center mb-3 border-b pb-2 sticky top-0 bg-gray-50 z-40">
+                                <h2 className="text-xl font-bold text-indigo-700 flex items-center">
+                                    <Camera className="w-5 h-5 mr-2"/> Fotoğraf & Metin Paylaş
+                                </h2>
+                                <button onClick={() => setIsPostingFormOpen(false)} className="text-gray-500 hover:text-gray-800 p-2 bg-white rounded-full shadow-md transition">
+                                    <X className="w-6 h-6" />
+                                </button>
+                            </div>
+                            
+                            <OCRAndPostForm 
+                                onClose={() => setIsPostingFormOpen(false)}
+                                onPost={handleOCRPostSubmit}
+                                isPosting={isPosting}
+                                userName={userName}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Ana İçerik */}
+                    <main className="flex-grow p-4 max-w-4xl mx-auto w-full pt-6">
+                        {isLoading && (
+                            <div className="text-center py-12 text-gray-500 flex flex-col items-center">
+                                <Loader2 className="w-8 h-8 animate-spin mb-3" />
+                                <p>Veriler yükleniyor ve kimlik doğrulaması bekleniyor...</p>
+                                <p className="text-xs mt-2 text-gray-400">İlk yükleme biraz zaman alabilir.</p>
+                            </div>
+                        )}
+
+                        {firebaseReady && (
+                            <>
+                                {/* Gönderi Akışı Başlığı */}
+                                <h1 className="text-3xl font-extrabold text-gray-800 mb-4 pb-2">
+                                    {isMyView ? `Kitaplarım (${postCount})` : `Vitrin - Sosyal Akış (${postCount})`}
+                                </h1>
+                                <p className="text-sm text-gray-500 mb-4">
+                                    Kullanıcı ID: <span className="font-mono text-xs bg-gray-100 p-1 rounded">{userId}</span>
+                                </p>
+
+                                {/* Gönderi Listesi / Grid */}
+                                {postCount > 0 ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {currentPosts.map((post) => (
+                                            <PostCard key={post.id} post={post} />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-16 text-gray-500 bg-white rounded-xl shadow-inner mt-8">
+                                        <p className="text-lg font-semibold">
+                                            {isMyView ? 'Henüz hiçbir paragraf paylaşmadınız. Merkezi kamera butonuna tıklayarak bir şeyler paylaşın!' : 'Sosyal akışta henüz paylaşım yok.'}
+                                        </p>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </main>
+
+                    {/* Alt Menü Çubuğu (Footer Nav Bar) */}
+                    <footer className="fixed bottom-0 left-0 right-0 bg-white shadow-2xl border-t border-gray-200 z-50">
+                        <div className="max-w-md mx-auto h-16 flex justify-around items-center px-4">
+                            <NavButton
+                                mode="mine"
+                                icon={BookOpen}
+                                label="Kitaplarım"
+                                action={() => setViewMode('mine')}
+                            />
+
+                            {/* Kamera Butonu - OCR Akışını Başlatır */}
+                            <CentralButton
+                                action={() => {
+                                    // OCR formunu aç
+                                    setIsPostingFormOpen(true);
+                                }}
+                            />
+
+                            <NavButton
+                                mode="social"
+                                icon={Users}
+                                label="Vitrin"
+                                action={() => setViewMode('social')}
+                            />
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+    <!-- Firebase SDK'larını yükleyin (V9 modül formatı) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, where, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Bu kütüphaneleri global window objesine ekleyelim, böylece yukarıdaki <script type="text/babel"> erişebilir.
+        window.firebase = {
+            initializeApp,
+            auth: { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged },
+            firestore: { getFirestore, collection, query, where, onSnapshot, addDoc, serverTimestamp }
+        };
+
+        // Otomatik başlatma
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("Firebase kütüphaneleri yüklendi.");
+        });
+    </script>
